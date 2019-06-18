@@ -1,5 +1,5 @@
 # Mitipump
-An  Adafruit Huzzah32 Feather based controller for Home Assistant and Mitsubishi Split AC units. Significantly cheaper than the Kumo Cloud add-ons.
+An  Adafruit Huzzah32 Feather Arduino based controller for Home Assistant and Mitsubishi Split AC units. Significantly cheaper than the Kumo Cloud add-ons.
 
 ## Thanks
 Home Assistant Integration would not exist without the @gysmo38 repository available here: https://github.com/gysmo38/mitsubishi2MQTT
