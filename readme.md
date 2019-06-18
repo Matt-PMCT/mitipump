@@ -18,3 +18,7 @@ If you purchase the pre-made pigtails (http://www.usastore.revolectrix.com/Produ
 
 Personally, I purchased a male-female set of 4 pin connectors to act as a disconnect for the unit so I don't have to take the whole cover off if I need to re-program/replace/restart an Arduino. I wire the male side to my Arduino, the female side to the pigtail above, plugged the pigtail in and ran it down so I can access it taking just the small bottom right cover off.
 
+## Technical Notes
+1. A Huzzah32 has two serial outputs, this code specifically uses the pinouts via the line Serial1
+2. Fill in your details via the .h file for your network and change the hvac_lr for each unit
+3. I'm not very good at C++ so please feel free to let me know if I did something silly or you know how to do it better.
