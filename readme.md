@@ -24,9 +24,9 @@ Personally, I purchased a male-female set of 4 pin connectors to act as a discon
 3. I'm not very good at C so please feel free to let me know if I did something silly or you know how to do it better.
 
 ## Installation With Pictures
-0.) Get a Huzzah32 board and pigtals, download the project, modify the .h variable if desired, and flash it to the Arduino
-1.) Optional: Solder a second 2nd set of pigtails to act as a disconnect so you don't need to pull the cover off if you need to replace the Ardunio. ![img](https://www.mattemerson.com/ard/1.jpg)
-2.) Solder the pigtails to the Huzzah32
-3.) Remove the cover from your Mitsubishi Mini Split indoor unit (youtube has videos)
-4.) Attach your Arduino ![img](https://www.mattemerson.com/ard/2.jpg) ![img](https://www.mattemerson.com/ard/3.jpg)
-5.) If MQTT is setup on Home Assistant and you configured the Aurduino correct it should auto-discover and be available to work
+1. Get a Huzzah32 board and pigtals, download the project, modify the .h variable if desired, and flash it to the Arduino
+2. Optional: Solder a second 2nd set of pigtails to act as a disconnect so you don't need to pull the cover off if you need to replace the Ardunio. ![img](https://www.mattemerson.com/ard/1.jpg)
+3. Solder the pigtails to the Huzzah32
+4. Remove the cover from your Mitsubishi Mini Split indoor unit (youtube has videos)
+5. Attach your Arduino ![img](https://www.mattemerson.com/ard/2.jpg) ![img](https://www.mattemerson.com/ard/3.jpg)
+6. If MQTT is setup on Home Assistant and you configured the Aurduino correct it should auto-discover and be available to work
