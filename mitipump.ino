@@ -8,7 +8,7 @@
 #include <PubSubClient.h>
 #include <HeatPump.h>
 
-#include "mitipump.h"
+#include "mitipump_mb.h"
 
 #ifdef OTA
 #ifdef ESP32
@@ -25,55 +25,64 @@ WiFiClient espClient;
 PubSubClient mqtt_client(espClient);
 HeatPump hp;
 unsigned long lastTempSend;
+unsigned long waitCount = 0;                 // counter
+uint8_t conn_stat = 0;                       // Connection status for WiFi and MQTT:
+                                             // Original Code: https://esp32.com/viewtopic.php?t=3851
+                                             // status |   WiFi   |    MQTT
+                                             // -------+----------+------------
+                                             //      0 |   down   |    down
+                                             //      1 | starting |    down
+                                             //      2 |    up    |    down
+                                             //      3 |    up    |  starting
+                                             //      4 |    up    | finalising
+                                             //      5 |    up    |     up
+//unsigned long lastTask = 0;                  // counter in example code for conn_stat <> 5
+
+
 
 // debug mode, when true, will send all packets received from the heatpump to topic heatpump_debug_topic
 // this can also be set by sending "on" to heatpump_debug_set_topic
 bool _debugMode = false;
+bool serialDebugMode = false;
 
 
 void setup() {
-// setup HA topics
-
-  
+  if (serialDebugMode == true) {
+    Serial.begin(115200);
+  }
   pinMode(redLedPin, OUTPUT);
   digitalWrite(redLedPin, HIGH);
-  pinMode(blueLedPin, OUTPUT);
-  digitalWrite(blueLedPin, HIGH);
-
-  WiFi.setHostname(client_id);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    // wait 500ms, flashing the blue LED to indicate WiFi connecting...
-    digitalWrite(blueLedPin, LOW);
-    delay(250);
-    digitalWrite(blueLedPin, HIGH);
-    delay(250);
-  }
-
-  
-
-  // startup mqtt connection
-  mqtt_client.setServer(mqtt_server, mqtt_port);
-  mqtt_client.setCallback(mqttCallback);
-  mqttConnect();
-  haConfig();
-
-  // connect to the heatpump. Callbacks first so that the hpPacketDebug callback is available for connect()
-  hp.setSettingsChangedCallback(hpSettingsChanged);
-  hp.setStatusChangedCallback(hpStatusChanged);
-  hp.setPacketCallback(hpPacketDebug);
 
 #ifdef OTA
   ArduinoOTA.setHostname(client_id);
   ArduinoOTA.setPassword(ota_password);
   ArduinoOTA.begin();
 #endif
-
-  hp.connect(&Serial1);
-
   lastTempSend = millis();
+}
+
+void startWifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  WiFi.setHostname(client_id);
+}
+
+void startMqtt() {
+  mqtt_client.setServer(mqtt_server, mqtt_port);
+  mqtt_client.setCallback(mqttCallback);
+  mqttConnect();
+  haConfig();
+  conn_stat = 4;
+}
+
+void startHeatPump() {
+  // connect to the heatpump. Callbacks first so that the hpPacketDebug callback is available for connect()
+  hp.setSettingsChangedCallback(hpSettingsChanged);
+  hp.setStatusChangedCallback(hpStatusChanged);
+  hp.setPacketCallback(hpPacketDebug);
+
+  //Huzzah 32 needs SerialONE, "Serial" is for the USB port, non-Huzzah boards may be different.
+  hp.connect(&Serial1);
 }
 
 void hpSettingsChanged() {
@@ -91,9 +100,12 @@ void hpSettingsChanged() {
 
   char bufferInfo[512];
   serializeJson(rootInfo, bufferInfo);
-
-  if (!mqtt_client.publish(ha_state_topic, bufferInfo, true)) {
-    mqtt_client.publish(ha_debug_topic, "failed to publish to room temp and operation status to heatpump/status topic");
+  if (rootInfo["roomTemperature"] != 32) {
+    if (!mqtt_client.publish(ha_state_topic, bufferInfo, true)) {
+      mqtt_client.publish(ha_debug_topic, "failed to publish to room temp and operation status to heatpump/status topic");
+    }
+  } else {
+    mqtt_client.publish(ha_debug_topic, "Room temp 32, no state message published");
   }
 }
 
@@ -131,8 +143,12 @@ void hpStatusChanged(heatpumpStatus currentStatus) {
   char bufferInfo[512];
   serializeJson(rootInfo, bufferInfo);
 
-  if (!mqtt_client.publish(ha_state_topic, bufferInfo, true)) {
-    mqtt_client.publish(ha_debug_topic, "failed to publish to room temp and operation status to ha_state_topic topic");
+  if (rootInfo["roomTemperature"] != 32) {
+    if (!mqtt_client.publish(ha_state_topic, bufferInfo, true)) {
+      mqtt_client.publish(ha_debug_topic, "failed to publish to room temp and operation status to ha_state_topic topic");
+    }
+  } else {
+    mqtt_client.publish(ha_debug_topic, "Room temp 32, no state message published");
   }
 }
 
@@ -304,11 +320,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   else {
     mqtt_client.publish(ha_debug_topic, strcat("heatpump: wrong mqtt topic: ", topic));
   }
+  //update the current status of the unit
+  delay(1000);
+  hp.sync();
+  delay(1000);
+  hpStatusChanged(hp.getStatus());
 }
 
 void mqttConnect() {
   // Loop until we're reconnected
-  while (!mqtt_client.connected()) {
+  if (!mqtt_client.connected()) {
     // Attempt to connect
     if (mqtt_client.connect(client_id, mqtt_username, mqtt_password)) {
       mqtt_client.subscribe(ha_debug_set_topic);
@@ -391,19 +412,87 @@ void haConfig() {
 }
 
 void loop() {
-  if (!mqtt_client.connected()) {
-    mqttConnect();
+  if ((WiFi.status() != WL_CONNECTED) && (conn_stat != 1)) { conn_stat = 0; }
+  if ((WiFi.status() == WL_CONNECTED) && !mqtt_client.connected() && (conn_stat != 3))  { conn_stat = 2; }
+  if ((WiFi.status() == WL_CONNECTED) && mqtt_client.connected() && (conn_stat != 5)) { conn_stat = 4;}
+  switch (conn_stat) {
+    case 0:                                                       // MQTT and WiFi down: start WiFi
+      if (serialDebugMode == true) {
+        Serial.println("MQTT and WiFi down: start WiFi");
+      }
+      startWifi();
+      conn_stat = 1;
+      break;
+    case 1:                                                       // WiFi starting, do nothing here
+      if (serialDebugMode == true) {
+        Serial.println("WiFi starting, wait : "+ String(waitCount));
+      }
+      if (waitCount > 300) {
+        if (serialDebugMode == true) {
+          Serial.println("WiFi restarting");
+        }
+        WiFi.disconnect();
+        startWifi();
+        waitCount = 0;
+        conn_stat = 0;
+      }
+      waitCount++;
+      break;
+    case 2:                                                       // WiFi up, MQTT down: start MQTT
+      if (serialDebugMode == true) {
+        Serial.println("WiFi up, MQTT down: start MQTT");
+      }
+      startMqtt();
+      conn_stat = 3; 
+      waitCount = 0;
+      break;
+    case 3:                                                       // WiFi up, MQTT starting, do nothing here
+      if (serialDebugMode == true) {
+        Serial.println("WiFi up, MQTT starting, wait : "+ String(waitCount));
+      }
+      waitCount++;
+      if (waitCount > 10000) {
+        waitCount = 0;
+      }
+      delay(5000);
+      break;
+    case 4:                                                       // WiFi up, MQTT up: finish MQTT configuration
+      if (serialDebugMode == true) {
+        Serial.println("WiFi up, MQTT up: finish MQTT configuration");
+      }
+      startHeatPump();
+      conn_stat = 5;
+      digitalWrite(redLedPin, LOW);                    
+      break;
   }
+// end of non-blocking connection setup section
 
-  hp.sync();
-
-  if (millis() > (lastTempSend + SEND_ROOM_TEMP_INTERVAL_MS)) { // only send the temperature every 60s
-    hpStatusChanged(hp.getStatus());
-    lastTempSend = millis();
+// start section with tasks where WiFi/MQTT is required
+  if (conn_stat == 5) {
+    hp.sync();
+    
+    if (millis() > (lastTempSend + SEND_ROOM_TEMP_INTERVAL_MS)) { // only send the temperature every 60s
+      hpStatusChanged(hp.getStatus());
+      lastTempSend = millis();
+    }
+  
+    mqtt_client.loop();
+  } else {
+    // flashing the red LED to indicate WiFi / MQTT connecting...
+    digitalWrite(redLedPin, HIGH);
+    delay(conn_stat * 200);
+    digitalWrite(redLedPin, LOW);
   }
+  
+// end of section for tasks where WiFi/MQTT are required
 
-  mqtt_client.loop();
-
+// start section for tasks which should run regardless of WiFi/MQTT
+  //if (millis() - lastTask > 1000) {                                 // Print message every second (just as an example)
+    //Serial.println("print this every second");
+    //lastTask = millis();
+  //}
+// end of section for tasks which should run regardless of WiFi/MQTT
+  delay(1000);
 #ifdef OTA
   ArduinoOTA.handle();
 #endif
