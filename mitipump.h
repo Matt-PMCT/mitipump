@@ -33,8 +33,8 @@ const char* ha_debug_set_topic      = "hvac_lr/debug/set";
 const char* ha_config_topic         = "homeassistant/climate/hvac_lr/config";
 
 // pinouts
-const int redLedPin  = 0; // Onboard LED = digital pin 0 (red LED on adafruit ESP8266 huzzah)
-const int blueLedPin = 2; // Onboard LED = digital pin 0 (blue LED on adafruit ESP8266 huzzah)
+const int redLedPin  = 13; // Onboard LED = digital pin 13 (red LED on adafruit ESP32 huzzah)
+
 
 // sketch settings
 const unsigned int SEND_ROOM_TEMP_INTERVAL_MS = 60000;
