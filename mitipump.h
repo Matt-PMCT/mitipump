@@ -21,6 +21,8 @@ const char* mqtt_password = "<YOUR MQTT PASSWORD GOES HERE>";
 // mqtt client settings
 // Note PubSubClient.h has a MQTT_MAX_PACKET_SIZE of 128 defined, so either raise it to 256 or use short topics
 const char* client_id                   = "hvac_lr"; // Must be unique on the MQTT network
+const char* home_assistant_discovery_topic = "homeassistant/climate/hvac_lr/config";
+
 const char* ha_power_set_topic      = "hvac_lr/power/set";
 const char* ha_mode_set_topic       = "hvac_lr/mode/set";
 const char* ha_temp_set_topic       = "hvac_lr/temp/set";
