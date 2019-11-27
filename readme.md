@@ -22,6 +22,7 @@ Personally, I purchased a male-female set of 4 pin connectors to act as a discon
 1. A Huzzah32 has two serial outputs, this code specifically uses the pinouts via the line Serial1
 2. Fill in your details via the .h file for your network and change the hvac_lr for each unit
 3. I'm not very good at C so please feel free to let me know if I did something silly or you know how to do it better.
+4. The Huzzah32 WIFI can have problems with the ESP32 board manager Version 1.0.3 & 1.0.4, downgraded to Board Version 1.0.2 if your Huzzah 32 is not connecting to a wifi network. 
 
 ## Installation With Pictures
 1. Get a Huzzah32 board and pigtals, download the project, modify the .h variable if desired, and flash it to the Arduino
