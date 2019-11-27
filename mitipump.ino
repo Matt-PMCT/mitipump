@@ -62,9 +62,13 @@ void setup() {
 }
 
 void startWifi() {
+  WiFi.persistent(false);
+  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  delay(1000);
   WiFi.setHostname(client_id);
+  WiFi.begin(ssid, password);
 }
 
 void startMqtt() {
@@ -119,6 +123,9 @@ const char* getPowerAndModeToString(heatpumpSettings currentSettings) {
   if (hpmode == "fan") {
     return "fan_only";
   }
+  else if (hpmode == "auto") {
+    return "heat_cool";
+  }
   else if (hppower == "off") {
     return "off";
   }
@@ -131,11 +138,12 @@ void hpStatusChanged(heatpumpStatus currentStatus) {
   // send room temp, operating info and all information
   heatpumpSettings currentSettings = hp.getSettings();
   
-  const size_t bufferSizeInfo = JSON_OBJECT_SIZE(5);
+  const size_t bufferSizeInfo = JSON_OBJECT_SIZE(6);
   DynamicJsonDocument rootInfo(bufferSizeInfo);
 
   rootInfo["roomTemperature"] = hp.CelsiusToFahrenheit(hp.getRoomTemperature());
   rootInfo["temperature"]     = hp.CelsiusToFahrenheit(currentSettings.temperature);
+  rootInfo["operating"]       = currentStatus.operating;
   rootInfo["fan"]             = currentSettings.fan;
   rootInfo["vane"]            = currentSettings.vane;
   rootInfo["mode"]            = getPowerAndModeToString(currentSettings);
@@ -197,6 +205,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
     String modeUpper = message;
     modeUpper.toUpperCase();
+    if (modeUpper == "HEAT_COOL") {
+      modeUpper = "AUTO";
+    }
+    else if (modeUpper == "FAN_ONLY") {
+      modeUpper = "FAN";
+    } 
+    else if (modeUpper == "OFF") {
+      hp.setPowerSetting("OFF");
+    } else {
+      hp.setPowerSetting("ON");
+    }
     hp.setModeSetting(modeUpper.c_str());
     hp.update();
   } else if (strcmp(topic, ha_temp_set_topic) == 0) {
@@ -321,9 +340,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     mqtt_client.publish(ha_debug_topic, strcat("heatpump: wrong mqtt topic: ", topic));
   }
   //update the current status of the unit
-  delay(1000);
+  delay(500);
   hp.sync();
-  delay(1000);
+  delay(500);
   hpStatusChanged(hp.getStatus());
 }
 
@@ -355,25 +374,27 @@ void haConfig() {
   haConfig["name"]                          = client_id;
   haConfig["mode_cmd_t"]                    = ha_mode_set_topic;
   haConfig["mode_stat_t"]                   = ha_state_topic;
-  haConfig["mode_stat_tpl"]                 = "{{ value_json.mode }}";
+  haConfig["mode_stat_tpl"]                 = "{{ value_json.mode if (value_json is defined and value_json.mode is defined and value_json.mode|length) else 'off' }}"; //Set default value for fix "Could not parse data for HA"
   haConfig["temp_cmd_t"]                    = ha_temp_set_topic;
   haConfig["temp_stat_t"]                   = ha_state_topic;
-  haConfig["temp_stat_tpl"]                 = "{{ value_json.temperature }}";
+  haConfig["temp_stat_tpl"]                 = "{{ value_json.temperature if (value_json is defined and value_json.temperature is defined and value_json.temperature|int > 16) else '26' }}"; //Set default value for fix "Could not parse data for HA"
   haConfig["curr_temp_t"]                   = ha_state_topic;
-  haConfig["current_temperature_template"]  = "{{ value_json.roomTemperature }}";
+  haConfig["curr_temp_tpl"]                 = "{{ value_json.roomTemperature if (value_json is defined and value_json.roomTemperature is defined and value_json.roomTemperature|int > 16) else '26' }}"; //Set default value for fix "Could not parse data for HA"
   haConfig["min_temp"]                      = "61";
   haConfig["max_temp"]                      = "86";
   haConfig["unique_id"]                      = client_id;
 
   JsonArray haConfigModes = haConfig.createNestedArray("modes");
-  haConfigModes.add("auto");
-  haConfigModes.add("off");
+  haConfigModes.add("heat_cool"); //native AUTO mode
   haConfigModes.add("cool");
-  haConfigModes.add("heat");
   haConfigModes.add("dry");
+  haConfigModes.add("heat");
+  haConfigModes.add("fan_only");  //native FAN mode
+  haConfigModes.add("off");
 
   JsonArray haConfigFan_modes = haConfig.createNestedArray("fan_modes");
   haConfigFan_modes.add("AUTO");
+  haConfigFan_modes.add("QUIET");
   haConfigFan_modes.add("1");
   haConfigFan_modes.add("2");
   haConfigFan_modes.add("3");
@@ -390,16 +411,19 @@ void haConfig() {
   haConfig["pow_cmd_t"]                     = ha_power_set_topic;
   haConfig["fan_mode_cmd_t"]                = ha_fan_set_topic;
   haConfig["fan_mode_stat_t"]               = ha_state_topic;
-  haConfig["fan_mode_stat_tpl"]             = "{{ value_json.fan }}";
+  haConfig["fan_mode_stat_tpl"]             = "{{ value_json.fan if (value_json is defined and value_json.fan is defined and value_json.fan|length) else 'AUTO' }}"; //Set default value for fix "Could not parse data for HA"
   haConfig["swing_mode_cmd_t"]              = ha_vane_set_topic;
   haConfig["swing_mode_stat_t"]             = ha_state_topic;
-  haConfig["swing_mode_stat_tpl"]           = "{{ value_json.vane }}";
+  haConfig["swing_mode_stat_tpl"]           = "{{ value_json.vane if (value_json is defined and value_json.vane is defined and value_json.vane|length) else 'AUTO' }}"; //Set default value for fix "Could not parse data for HA"
 
+  haConfig["action_topic"]                  = ha_state_topic;
+  haConfig["action_template"]               = "{% set values = {'off':'off', 'heat':'heating', 'cool':'cooling', 'dry':'drying', 'fan_only':'fan'} %}{% if value_json is defined and value_json.mode|length %}{% if value_json.mode == 'off' %}{{'off'}}{% else %}{% if value_json.operating is sameas true %}{{ values[value_json.mode] if value_json.mode in values.keys() else 'idle'}}{% else %}{{'idle'}}{% endif %}{% endif %}{% else %}{{'idle'}}{% endif %}";
+  
   JsonObject haConfigDevice = haConfig.createNestedObject("device");
 
   haConfigDevice["ids"]   = client_id;
   haConfigDevice["name"]  = client_id;
-  haConfigDevice["sw"]    = "Mitsu2MQTT .1ME";
+  haConfigDevice["sw"]    = "Mitsu2MQTT .2ME";
   haConfigDevice["mdl"]   = "HVAC MITUBISHI";
   haConfigDevice["mf"]    = "MITSUBISHI";
 
@@ -425,14 +449,13 @@ void loop() {
       break;
     case 1:                                                       // WiFi starting, do nothing here
       if (serialDebugMode == true) {
-        Serial.println("WiFi starting, wait : "+ String(waitCount));
+        Serial.println("WiFi starting (status:" + String(WiFi.status()) + ", wait : "+ String(waitCount));
       }
-      if (waitCount > 300) {
+      if (waitCount > 150) {
         if (serialDebugMode == true) {
           Serial.println("WiFi restarting");
         }
         WiFi.disconnect();
-        startWifi();
         waitCount = 0;
         conn_stat = 0;
       }
@@ -451,7 +474,8 @@ void loop() {
         Serial.println("WiFi up, MQTT starting, wait : "+ String(waitCount));
       }
       waitCount++;
-      if (waitCount > 10000) {
+      if (waitCount > 50) {
+        startMqtt();
         waitCount = 0;
       }
       delay(5000);
@@ -470,12 +494,10 @@ void loop() {
 // start section with tasks where WiFi/MQTT is required
   if (conn_stat == 5) {
     hp.sync();
-    
     if (millis() > (lastTempSend + SEND_ROOM_TEMP_INTERVAL_MS)) { // only send the temperature every 60s
       hpStatusChanged(hp.getStatus());
       lastTempSend = millis();
     }
-  
     mqtt_client.loop();
   } else {
     // flashing the red LED to indicate WiFi / MQTT connecting...
@@ -492,7 +514,7 @@ void loop() {
     //lastTask = millis();
   //}
 // end of section for tasks which should run regardless of WiFi/MQTT
-  delay(1000);
+  delay(500);
 #ifdef OTA
   ArduinoOTA.handle();
 #endif
