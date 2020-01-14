@@ -255,6 +255,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     hp.update();
   }
   else if (strcmp(topic, ha_remTemp_set_topic) == 0) {
+    lastRemoteTempRcvd = millis();
     lastRemoteTemp = hp.FahrenheitToCelsius(strtof(message, NULL));
     const size_t bufferSize = JSON_OBJECT_SIZE(2);
     StaticJsonDocument<bufferSize> root;
