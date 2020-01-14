@@ -24,6 +24,9 @@
 WiFiClient espClient;
 PubSubClient mqtt_client(espClient);
 HeatPump hp;
+uint8_t sendRemoteTemp = 0; // 0 = no, 1 = yes
+float lastRemoteTemp = 0;
+unsigned long lastRemoteTempRcvd;
 unsigned long lastTempSend;
 unsigned long waitCount = 0;                 // counter
 uint8_t conn_stat = 0;                       // Connection status for WiFi and MQTT:
@@ -92,12 +95,14 @@ void startHeatPump() {
 void hpSettingsChanged() {
   // send room temp, operating info and all information
   heatpumpSettings currentSettings = hp.getSettings();
+  heatpumpStatus currentStatus = hp.getStatus();
   
-  const size_t bufferSizeInfo = JSON_OBJECT_SIZE(5);
+  const size_t bufferSizeInfo = JSON_OBJECT_SIZE(6);
   DynamicJsonDocument rootInfo(bufferSizeInfo);
 
   rootInfo["roomTemperature"] = hp.CelsiusToFahrenheit(hp.getRoomTemperature());
   rootInfo["temperature"]     = hp.CelsiusToFahrenheit(currentSettings.temperature);
+  rootInfo["operating"]       = currentStatus.operating;
   rootInfo["fan"]             = currentSettings.fan;
   rootInfo["vane"]            = currentSettings.vane;
   rootInfo["mode"]            = getPowerAndModeToString(currentSettings);
@@ -199,10 +204,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   } else if (strcmp(topic, ha_mode_set_topic) == 0) {
     const size_t bufferSize = JSON_OBJECT_SIZE(2);
     StaticJsonDocument<bufferSize> root;
-    root["mode"] = message;
-    String mqttOutput;
-    serializeJson(root, mqttOutput);
-    mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
+    //root["mode"] = message;
+    //String mqttOutput;
+    //serializeJson(root, mqttOutput);
+    //mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
     String modeUpper = message;
     modeUpper.toUpperCase();
     if (modeUpper == "HEAT_COOL") {
@@ -222,32 +227,43 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     float temperature = strtof(message, NULL);
     const size_t bufferSize = JSON_OBJECT_SIZE(2);
     StaticJsonDocument<bufferSize> root;
-    root["temperature"] = message;
-    String mqttOutput;
-    serializeJson(root, mqttOutput);
-    mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
+    //root["temperature"] = message;
+    //String mqttOutput;
+    //serializeJson(root, mqttOutput);
+    //mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
     hp.setTemperature(hp.FahrenheitToCelsius(temperature));
     hp.update();
   } 
   else if (strcmp(topic, ha_fan_set_topic) == 0) {
     const size_t bufferSize = JSON_OBJECT_SIZE(2);
     StaticJsonDocument<bufferSize> root;
-    root["fan"] = message;
-    String mqttOutput;
-    serializeJson(root, mqttOutput);
-    mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
+    //root["fan"] = message;
+    //String mqttOutput;
+    //serializeJson(root, mqttOutput);
+    //mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
     hp.setFanSpeed(message);
     hp.update();
   }
   else if (strcmp(topic, ha_vane_set_topic) == 0) {
     const size_t bufferSize = JSON_OBJECT_SIZE(2);
     StaticJsonDocument<bufferSize> root;
-    root["vane"] = message;
-    String mqttOutput;
-    serializeJson(root, mqttOutput);
-    mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
+    //root["vane"] = message;
+    //String mqttOutput;
+    //serializeJson(root, mqttOutput);
+    //mqtt_client.publish(ha_state_topic, mqttOutput.c_str());
     hp.setVaneSetting(message);
     hp.update();
+  }
+  else if (strcmp(topic, ha_remTemp_set_topic) == 0) {
+    lastRemoteTemp = hp.FahrenheitToCelsius(strtof(message, NULL));
+    const size_t bufferSize = JSON_OBJECT_SIZE(2);
+    StaticJsonDocument<bufferSize> root;
+    sendRemoteTemp = 1; // set this value to routinely update the remote temp
+    if (_debugMode) {
+      mqtt_client.publish(ha_debug_topic, "Setting Remote Temp");
+    }
+    hp.setRemoteTemperature(lastRemoteTemp); // send it now though
+    hp.update(); 
   }
   else if (strcmp(topic, ha_debug_set_topic) == 0) { //if the incoming message is on the heatpump_debug_set_topic topic...
     if (strcmp(message, "on") == 0) {
@@ -258,92 +274,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       mqtt_client.publish(ha_debug_topic, "debug mode disabled");
     }
   } 
-  /*else if (strcmp(topic, heatpump_set_topic) == 0) { //if the incoming message is on the heatpump_set_topic topic...
-    // Parse message into JSON
-    const size_t bufferSize = JSON_OBJECT_SIZE(6);
-    DynamicJsonDocument root(bufferSize);
-    DeserializationError error = deserializeJson(root, message);
-
-    if (error) {
-      mqtt_client.publish(heatpump_debug_topic, "!root.success(): invalid JSON on heatpump_set_topic...");
-      return;
-    }
-
-    // Step 3: Retrieve the values
-    if (root.containsKey("power")) {
-      const char* power = root["power"];
-      hp.setPowerSetting(power);
-    }
-
-    if (root.containsKey("mode")) {
-      const char* mode = root["mode"];
-      hp.setModeSetting(mode);
-    }
-
-    if (root.containsKey("temperature")) {
-      float temperature = root["temperature"];
-      hp.setTemperature(hp.FahrenheitToCelsius(temperature));
-    }
-
-    if (root.containsKey("fan")) {
-      const char* fan = root["fan"];
-      hp.setFanSpeed(fan);
-    }
-
-    if (root.containsKey("vane")) {
-      const char* vane = root["vane"];
-      hp.setVaneSetting(vane);
-    }
-
-    if (root.containsKey("wideVane")) {
-      const char* wideVane = root["wideVane"];
-      hp.setWideVaneSetting(wideVane);
-    }
-
-    if (root.containsKey("remoteTemp")) {
-      float remoteTemp = root["remoteTemp"];
-      hp.setRemoteTemperature(hp.FahrenheitToCelsius(remoteTemp));
-    }
-    else if (root.containsKey("custom")) {
-      String custom = root["custom"];
-
-      // copy custom packet to char array
-      char buffer[(custom.length() + 1)]; // +1 for the NULL at the end
-      custom.toCharArray(buffer, (custom.length() + 1));
-
-      byte bytes[20]; // max custom packet bytes is 20
-      int byteCount = 0;
-      char *nextByte;
-
-      // loop over the byte string, breaking it up by spaces (or at the end of the line - \n)
-      nextByte = strtok(buffer, " ");
-      while (nextByte != NULL && byteCount < 20) {
-        bytes[byteCount] = strtol(nextByte, NULL, 16); // convert from hex string
-        nextByte = strtok(NULL, "   ");
-        byteCount++;
-      }
-
-      // dump the packet so we can see what it is. handy because you can run the code without connecting the ESP to the heatpump, and test sending custom packets
-      hpPacketDebug(bytes, byteCount, "customPacket");
-
-      hp.sendCustomPacket(bytes, byteCount);
-    }
-    else {
-      bool result = hp.update();
-
-      if (!result) {
-        mqtt_client.publish(heatpump_debug_topic, "heatpump: update() failed");
-      }
-    }
-*/
   else {
     mqtt_client.publish(ha_debug_topic, strcat("heatpump: wrong mqtt topic: ", topic));
   }
-  //update the current status of the unit
-  delay(500);
-  hp.sync();
-  delay(500);
-  hpStatusChanged(hp.getStatus());
 }
 
 void mqttConnect() {
@@ -357,6 +290,7 @@ void mqttConnect() {
       mqtt_client.subscribe(ha_fan_set_topic);
       mqtt_client.subscribe(ha_temp_set_topic);
       mqtt_client.subscribe(ha_vane_set_topic);
+      mqtt_client.subscribe(ha_remTemp_set_topic);
     } else {
       // Wait 5 seconds before retrying
       delay(5000);
@@ -423,7 +357,7 @@ void haConfig() {
 
   haConfigDevice["ids"]   = client_id;
   haConfigDevice["name"]  = client_id;
-  haConfigDevice["sw"]    = "Mitsu2MQTT .2ME";
+  haConfigDevice["sw"]    = "Mitsu2MQTT .3ME";
   haConfigDevice["mdl"]   = "HVAC MITUBISHI";
   haConfigDevice["mf"]    = "MITSUBISHI";
 
@@ -497,6 +431,18 @@ void loop() {
     if (millis() > (lastTempSend + SEND_ROOM_TEMP_INTERVAL_MS)) { // only send the temperature every 60s
       hpStatusChanged(hp.getStatus());
       lastTempSend = millis();
+      if (sendRemoteTemp == 1) {
+        if (_debugMode) {
+          mqtt_client.publish(ha_debug_topic, "Setting Remote Temp");
+        }
+        //also send the remote temp, must send it every minute to keep unit using it, or it will fall back to unit temp
+        hp.setRemoteTemperature(lastRemoteTemp);
+        hp.update();
+        if (millis() > (lastRemoteTempRcvd + ROOM_TEMP_RCV_TIMEOUT_MS)) { //consider remote temp recieved expired (switch back to unit)
+          sendRemoteTemp = 0; // change to do not send
+          hp.setRemoteTemperature(0); //this will return the unit to using its internal temp (as would not sending one)
+        }
+      }
     }
     mqtt_client.loop();
   } else {
