@@ -33,10 +33,12 @@ const char* ha_state_topic          = "hvac_lr/state";
 const char* ha_debug_topic          = "hvac_lr/debug";
 const char* ha_debug_set_topic      = "hvac_lr/debug/set";
 const char* ha_config_topic         = "homeassistant/climate/hvac_lr/config";
+const char* ha_remTemp_set_topic    = "hvac_dr/remoteTemp/set";
 
 // pinouts
 const int redLedPin  = 13; // Onboard LED = digital pin 13 (red LED on adafruit ESP32 huzzah)
 
 
-// sketch settings
-const unsigned int SEND_ROOM_TEMP_INTERVAL_MS = 60000;
+// timing settings
+const unsigned int SEND_ROOM_TEMP_INTERVAL_MS = 60000; //1 minute
+const unsigned int ROOM_TEMP_RCV_TIMEOUT_MS = 3600000; //1 hour - no room temp mqtt messages for 1 hour means abort using remote room temp
