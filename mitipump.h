@@ -4,7 +4,8 @@
  *          - Requires and based on the excellent HeatPump library by @SwiCago available here: https://github.com/SwiCago/HeatPump
  *          - Is designed to be plug and play with an Adafruit Huzzah32 Feather.
  */
-//#define ESP32
+#define ESP32
+//remove the commented 2 lines below if you want to do OTA updates
 //#define OTA
 //const char* ota_password = "<YOUR OTA PASSWORD GOES HERE>";
 
