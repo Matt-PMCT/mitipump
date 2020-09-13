@@ -8,7 +8,7 @@
 #include <PubSubClient.h>
 #include <HeatPump.h>
 
-#include "mitipump_mb.h"
+#include "mitipump.h"
 
 #ifdef OTA
 #ifdef ESP32
@@ -56,11 +56,6 @@ void setup() {
   pinMode(redLedPin, OUTPUT);
   digitalWrite(redLedPin, HIGH);
 
-#ifdef OTA
-  ArduinoOTA.setHostname(client_id);
-  ArduinoOTA.setPassword(ota_password);
-  ArduinoOTA.begin();
-#endif
   lastTempSend = millis();
 }
 
@@ -422,6 +417,25 @@ void loop() {
       if (serialDebugMode == true) {
         Serial.println("WiFi up, MQTT up: finish MQTT configuration");
       }
+#ifdef OTA
+      ArduinoOTA.setHostname(client_id);
+      ArduinoOTA.setPassword(ota_password);
+      ArduinoOTA.onStart([]() {
+        mqtt_client.publish(ha_debug_topic, "OTA Update Started");
+      });
+      ArduinoOTA.onEnd([]() {
+        mqtt_client.publish(ha_debug_topic, "OTA Update Completed");
+      });
+      ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) mqtt_client.publish(ha_debug_topic, "OTA Error: Auth Fail");
+        else if (error == OTA_BEGIN_ERROR) mqtt_client.publish(ha_debug_topic, "OTA Error: Begin Fail");
+        else if (error == OTA_CONNECT_ERROR) mqtt_client.publish(ha_debug_topic, "OTA Error: Connect Fail");
+        else if (error == OTA_RECEIVE_ERROR) mqtt_client.publish(ha_debug_topic, "OTA Error: Recieve Fail");
+        else if (error == OTA_END_ERROR) mqtt_client.publish(ha_debug_topic, "OTA Error: End Fail");
+      });
+      ArduinoOTA.begin();
+#endif
       startHeatPump();
       conn_stat = 5;
       digitalWrite(redLedPin, LOW);                    
@@ -448,6 +462,7 @@ void loop() {
         }
       }
     }
+    ArduinoOTA.handle();
     mqtt_client.loop();
   } else {
     // flashing the red LED to indicate WiFi / MQTT connecting...
