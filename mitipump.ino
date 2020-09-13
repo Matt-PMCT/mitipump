@@ -273,6 +273,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     } else if (strcmp(message, "off") == 0) {
       _debugMode = false;
       mqtt_client.publish(ha_debug_topic, "debug mode disabled");
+    } else {
+      mqtt_client.publish(ha_debug_topic, "Debug topic requires RAW on or off to set");
     }
   } 
   else {
@@ -285,6 +287,7 @@ void mqttConnect() {
   if (!mqtt_client.connected()) {
     // Attempt to connect
     if (mqtt_client.connect(client_id, mqtt_username, mqtt_password)) {
+      mqtt_client.publish(ha_debug_topic, "Connected to MQTT Server");
       mqtt_client.subscribe(ha_debug_set_topic);
       mqtt_client.subscribe(ha_power_set_topic);
       mqtt_client.subscribe(ha_mode_set_topic);
